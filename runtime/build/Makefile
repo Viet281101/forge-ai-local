@@ -129,6 +129,30 @@ forge_runtime/fast:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/forge_runtime.dir/build.make CMakeFiles/forge_runtime.dir/build
 .PHONY : forge_runtime/fast
 
+src/core/action_dispatcher.o: src/core/action_dispatcher.cpp.o
+.PHONY : src/core/action_dispatcher.o
+
+# target to build an object file
+src/core/action_dispatcher.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/forge_runtime.dir/build.make CMakeFiles/forge_runtime.dir/src/core/action_dispatcher.cpp.o
+.PHONY : src/core/action_dispatcher.cpp.o
+
+src/core/action_dispatcher.i: src/core/action_dispatcher.cpp.i
+.PHONY : src/core/action_dispatcher.i
+
+# target to preprocess a source file
+src/core/action_dispatcher.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/forge_runtime.dir/build.make CMakeFiles/forge_runtime.dir/src/core/action_dispatcher.cpp.i
+.PHONY : src/core/action_dispatcher.cpp.i
+
+src/core/action_dispatcher.s: src/core/action_dispatcher.cpp.s
+.PHONY : src/core/action_dispatcher.s
+
+# target to generate assembly for a file
+src/core/action_dispatcher.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/forge_runtime.dir/build.make CMakeFiles/forge_runtime.dir/src/core/action_dispatcher.cpp.s
+.PHONY : src/core/action_dispatcher.cpp.s
+
 src/ipc/socket_server.o: src/ipc/socket_server.cpp.o
 .PHONY : src/ipc/socket_server.o
 
@@ -186,6 +210,9 @@ help:
 	@echo "... edit_cache"
 	@echo "... rebuild_cache"
 	@echo "... forge_runtime"
+	@echo "... src/core/action_dispatcher.o"
+	@echo "... src/core/action_dispatcher.i"
+	@echo "... src/core/action_dispatcher.s"
 	@echo "... src/ipc/socket_server.o"
 	@echo "... src/ipc/socket_server.i"
 	@echo "... src/ipc/socket_server.s"

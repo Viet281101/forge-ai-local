@@ -1,1 +1,1 @@
-/usr/bin/c++ CMakeFiles/forge_runtime.dir/src/main.cpp.o CMakeFiles/forge_runtime.dir/src/ipc/socket_server.cpp.o -o forge_runtime 
+/usr/bin/c++ CMakeFiles/forge_runtime.dir/src/main.cpp.o CMakeFiles/forge_runtime.dir/src/ipc/socket_server.cpp.o CMakeFiles/forge_runtime.dir/src/core/action_dispatcher.cpp.o -o forge_runtime 

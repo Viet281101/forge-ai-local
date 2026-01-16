@@ -8,13 +8,18 @@ OS="$(uname -s)"
 if [[ "$OS" == "Linux" ]]; then
 	echo "Detected Linux"
 
+	if ! command -v sudo &> /dev/null; then
+		echo "sudo not found. Please run as root or install sudo."
+		exit 1
+	fi
+
 	sudo apt update
 	sudo apt install -y \
 		build-essential \
 		cmake \
-		make \
 		git \
-		socat
+		socat \
+		nlohmann-json3-dev
 
 elif [[ "$OS" == "Darwin" ]]; then
 	echo "Detected macOS"
@@ -25,15 +30,24 @@ elif [[ "$OS" == "Darwin" ]]; then
 		exit 1
 	fi
 
+	brew update
 	brew install \
 		cmake \
-		make \
 		git \
-		socat
+		socat \
+		nlohmann-json
 
 else
 	echo "Unsupported OS: $OS"
 	exit 1
 fi
 
+echo
 echo "==> Setup complete"
+echo
+echo "Next steps:"
+echo "  make build"
+echo "  make run"
+echo
+echo "Test with:"
+echo "  echo '{ \"version\": 1, \"action\": \"ping\" }' | socat - UNIX-CONNECT:/tmp/forge-ai.sock"

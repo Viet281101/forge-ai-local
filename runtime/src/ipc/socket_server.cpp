@@ -6,17 +6,21 @@
 #include <cstring>
 #include <iostream>
 
-SocketServer::SocketServer(const std::string& socket_path)
-	: socket_path_(socket_path), server_fd_(-1) {}
+SocketServer::SocketServer(const std::string &socket_path)
+		: socket_path_(socket_path), server_fd_(-1) {}
 
-SocketServer::~SocketServer() {
-	if (server_fd_ >= 0) close(server_fd_);
+SocketServer::~SocketServer()
+{
+	if (server_fd_ >= 0)
+		close(server_fd_);
 	unlink(socket_path_.c_str());
 }
 
-void SocketServer::run() {
+void SocketServer::run()
+{
 	server_fd_ = socket(AF_UNIX, SOCK_STREAM, 0);
-	if (server_fd_ < 0) {
+	if (server_fd_ < 0)
+	{
 		perror("socket");
 		return;
 	}
@@ -27,21 +31,25 @@ void SocketServer::run() {
 
 	unlink(socket_path_.c_str());
 
-	if (bind(server_fd_, (sockaddr*)&addr, sizeof(addr)) < 0) {
+	if (bind(server_fd_, (sockaddr *)&addr, sizeof(addr)) < 0)
+	{
 		perror("bind");
 		return;
 	}
 
-	if (listen(server_fd_, 1) < 0) {
+	if (listen(server_fd_, 1) < 0)
+	{
 		perror("listen");
 		return;
 	}
 
 	std::cout << "[forge-runtime] listening on " << socket_path_ << "\n";
 
-	while (true) {
+	while (true)
+	{
 		int client_fd = accept(server_fd_, nullptr, nullptr);
-		if (client_fd < 0) {
+		if (client_fd < 0)
+		{
 			perror("accept");
 			continue;
 		}
@@ -51,17 +59,32 @@ void SocketServer::run() {
 	}
 }
 
-void SocketServer::handle_client(int client_fd) {
+void SocketServer::handle_client(int client_fd)
+{
 	char buffer[4096];
 	ssize_t n = read(client_fd, buffer, sizeof(buffer) - 1);
-	if (n <= 0) return;
+	if (n <= 0)
+		return;
 
 	buffer[n] = '\0';
 
-	std::cout << "[request]\n" << buffer << "\n";
+	std::cout << "[request raw]\n"
+						<< buffer << "\n";
 
-	const char* response =
-		"{ \"status\": \"DONE\", \"result\": \"hello from forge-runtime\" }";
+	json response;
 
-	write(client_fd, response, std::strlen(response));
+	try
+	{
+		json request = json::parse(buffer);
+		response = dispatcher_.dispatch(request);
+	}
+	catch (const std::exception &)
+	{
+		response = {
+				{"status", "error"},
+				{"error", "invalid json"}};
+	}
+
+	std::string out = response.dump();
+	write(client_fd, out.c_str(), out.size());
 }

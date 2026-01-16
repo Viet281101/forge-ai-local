@@ -81,12 +81,12 @@ clean: CMakeFiles/forge_runtime.dir/clean
 CMakeFiles/forge_runtime.dir/all:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/forge_runtime.dir/build.make CMakeFiles/forge_runtime.dir/depend
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/forge_runtime.dir/build.make CMakeFiles/forge_runtime.dir/build
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/viet-anh/Documents/Personal_Projects/forge-ai-local/runtime/build/CMakeFiles --progress-num=1,2,3 "Built target forge_runtime"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/viet-anh/Documents/Personal_Projects/forge-ai-local/runtime/build/CMakeFiles --progress-num=1,2,3,4 "Built target forge_runtime"
 .PHONY : CMakeFiles/forge_runtime.dir/all
 
 # Build rule for subdir invocation for target.
 CMakeFiles/forge_runtime.dir/rule: cmake_check_build_system
-	$(CMAKE_COMMAND) -E cmake_progress_start /home/viet-anh/Documents/Personal_Projects/forge-ai-local/runtime/build/CMakeFiles 3
+	$(CMAKE_COMMAND) -E cmake_progress_start /home/viet-anh/Documents/Personal_Projects/forge-ai-local/runtime/build/CMakeFiles 4
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 CMakeFiles/forge_runtime.dir/all
 	$(CMAKE_COMMAND) -E cmake_progress_start /home/viet-anh/Documents/Personal_Projects/forge-ai-local/runtime/build/CMakeFiles 0
 .PHONY : CMakeFiles/forge_runtime.dir/rule
