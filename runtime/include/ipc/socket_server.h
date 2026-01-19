@@ -9,7 +9,7 @@ using json = nlohmann::json;
 class SocketServer
 {
 public:
-	explicit SocketServer(const std::string &socket_path);
+	SocketServer(const std::string &socket_path, ActionDispatcher &dispatcher);
 	~SocketServer();
 
 	void run();
@@ -17,7 +17,7 @@ public:
 private:
 	std::string socket_path_;
 	int server_fd_;
-	ActionDispatcher dispatcher_;
+	ActionDispatcher &dispatcher_;
 
 	void handle_client(int client_fd);
 };

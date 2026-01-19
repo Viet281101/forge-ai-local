@@ -8,6 +8,8 @@ add_executable(forge_runtime
 	src/main.cpp
 	src/ipc/socket_server.cpp
 	src/core/action_dispatcher.cpp
+	src/core/tool_registry.cpp
+	src/tools/list_dir_tool.cpp
 )
 
 target_include_directories(forge_runtime PRIVATE

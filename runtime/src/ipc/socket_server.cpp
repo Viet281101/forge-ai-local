@@ -6,8 +6,10 @@
 #include <cstring>
 #include <iostream>
 
-SocketServer::SocketServer(const std::string &socket_path)
-		: socket_path_(socket_path), server_fd_(-1) {}
+SocketServer::SocketServer(const std::string &socket_path, ActionDispatcher &dispatcher)
+		: socket_path_(socket_path), server_fd_(-1), dispatcher_(dispatcher)
+{
+}
 
 SocketServer::~SocketServer()
 {

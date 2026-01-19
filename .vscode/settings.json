@@ -24,5 +24,6 @@
 	},
 
 	"files.trimTrailingWhitespace": true,
-	"files.insertFinalNewline": true
+	"files.insertFinalNewline": true,
+	"cmake.sourceDirectory": "/home/viet-anh/Documents/Personal_Projects/forge-ai-local/runtime"
 }
