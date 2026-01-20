@@ -17,4 +17,5 @@ private:
 
 	json handle_ping(const json &request);
 	json handle_infer(const json &request);
+	json handle_list_tools(const json &request);
 };

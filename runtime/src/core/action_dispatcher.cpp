@@ -26,6 +26,10 @@ json ActionDispatcher::dispatch(const json &request)
 	{
 		return handle_infer(request);
 	}
+	else if (action == "list_tools")
+	{
+		return handle_list_tools(request);
+	}
 
 	return {
 			{"status", "error"},
@@ -51,78 +55,71 @@ json ActionDispatcher::handle_infer(const json &request)
 	}
 
 	const auto &messages = request["messages"];
-	if (messages.empty())
-	{
-		return {
-				{"status", "error"},
-				{"action", "infer"},
-				{"error", {{"code", "INVALID_REQUEST"}, {"message", "messages must not be empty"}}}};
-	}
+	json results = json::array();
 
-	bool has_user = false;
 	for (const auto &msg : messages)
 	{
-		if (!msg.contains("role"))
+		if (!msg.contains("tool_call"))
+			continue;
+
+		const auto &call = msg["tool_call"];
+
+		if (!call.contains("id") || !call.contains("name"))
 		{
 			return {
 					{"status", "error"},
 					{"action", "infer"},
-					{"error", {{"code", "INVALID_MESSAGE"}, {"message", "each message requires role"}}}};
+					{"error", {{"code", "INVALID_TOOL_CALL"}, {"message", "tool_call must contain id and name"}}}};
 		}
 
-		if (msg["role"] == "user")
-			has_user = true;
-	}
+		std::string call_id = call["id"];
+		std::string tool = call["name"];
+		json args = call.value("arguments", json::object());
 
-	// ===== TOOL CALL HANDLING =====
-	for (const auto &msg : messages)
-	{
-		if (msg.contains("tool_call"))
+		if (!tool_registry_.has(tool))
 		{
-			const auto &call = msg["tool_call"];
-
-			std::string tool_name = call.value("name", "");
-			json arguments = call.value("arguments", json::object());
-
-			if (!tool_registry_.has(tool_name))
-			{
-				return {
-						{"status", "error"},
-						{"action", "infer"},
-						{"error", {{"code", "UNKNOWN_TOOL"}, {"message", tool_name}}}};
-			}
-
-			json tool_result = tool_registry_.invoke(tool_name, arguments);
-
 			return {
-					{"status", "ok"},
+					{"status", "error"},
 					{"action", "infer"},
-					{"result", {{"role", "tool"}, {"name", tool_name}, {"content", tool_result.dump()}}}};
+					{"error", {{"code", "UNKNOWN_TOOL"}, {"tool", tool}}}};
 		}
+
+		json data = tool_registry_.invoke(tool, args);
+
+		// validation / execution error
+		if (data.contains("error"))
+		{
+			return {
+					{"status", "error"},
+					{"action", "infer"},
+					{"error", data["error"]}};
+		}
+
+		results.push_back({{"role", "tool"},
+											 {"tool_call_id", call_id},
+											 {"name", tool},
+											 {"content", data}});
 	}
 
-	// ===== STUB LLM FALLBACK =====
-	if (!has_user)
+	// No tool calls found
+	if (results.empty())
 	{
 		return {
-				{"status", "error"},
+				{"status", "ok"},
 				{"action", "infer"},
-				{"error", {{"code", "INVALID_REQUEST"}, {"message", "at least one user message is required"}}}};
-	}
-
-	std::string last_user_input;
-	for (auto it = messages.rbegin(); it != messages.rend(); ++it)
-	{
-		if ((*it)["role"] == "user")
-		{
-			last_user_input = (*it)["content"];
-			break;
-		}
+				{"result", {{"type", "assistant"}, {"message", {{"role", "assistant"}, {"content", "No tool call detected."}}}}}};
 	}
 
 	return {
 			{"status", "ok"},
 			{"action", "infer"},
-			{"result", {{"role", "assistant"}, {"content", "echo: " + last_user_input}}},
-			{"usage", {{"prompt_tokens", 0}, {"completion_tokens", 0}}}};
+			{"result", {{"type", "tool_results"}, {"messages", results}}}};
+}
+
+json ActionDispatcher::handle_list_tools(const json &)
+{
+	return {
+			{"status", "ok"},
+			{"action", "list_tools"},
+			{"tools", tool_registry_.list()}};
 }

@@ -20,8 +20,17 @@ echo '{
     {
       "role": "assistant",
       "tool_call": {
+        "id": "call_01",
         "name": "list_dir",
         "arguments": { "path": "." }
+      }
+    },
+    {
+      "role": "assistant",
+      "tool_call": {
+        "id": "call_02",
+        "name": "list_dir",
+        "arguments": { "path": "src" }
       }
     }
   ]

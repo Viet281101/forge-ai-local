@@ -10,6 +10,7 @@ add_executable(forge_runtime
 	src/core/action_dispatcher.cpp
 	src/core/tool_registry.cpp
 	src/tools/list_dir_tool.cpp
+	src/tools/argument_validator.cpp
 )
 
 target_include_directories(forge_runtime PRIVATE
