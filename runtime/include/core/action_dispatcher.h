@@ -16,6 +16,7 @@ private:
 	ToolRegistry &tool_registry_;
 
 	json handle_ping(const json &request);
+	json handle_single_tool_call(const json &call);
 	json handle_infer(const json &request);
 	json handle_list_tools(const json &request);
 };

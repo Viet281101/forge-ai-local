@@ -1,5 +1,6 @@
 #include "core/tool_registry.h"
 #include "tools/argument_validator.h"
+#include "core/error.h"
 
 void ToolRegistry::register_tool(std::unique_ptr<Tool> tool)
 {
@@ -17,7 +18,11 @@ json ToolRegistry::invoke(const std::string &name, json arguments) const
 	if (it == tools_.end())
 	{
 		return {
-				{"error", {{"code", "UNKNOWN_TOOL"}, {"message", "tool not found"}}}};
+				{"error", make_error(
+											ErrorCode::UNKNOWN_TOOL,
+											"tool not found",
+											"",
+											name)}};
 	}
 
 	auto &tool = it->second;
@@ -26,7 +31,11 @@ json ToolRegistry::invoke(const std::string &name, json arguments) const
 	if (auto err = ArgumentValidator::validate(arguments, schema))
 	{
 		return {
-				{"error", {{"code", "INVALID_ARGUMENT"}, {"field", err->field}, {"message", err->message}}}};
+				{"error", make_error(
+											ErrorCode::INVALID_ARGUMENT,
+											err->message,
+											err->field,
+											name)}};
 	}
 
 	return tool->run(arguments);
@@ -34,14 +43,13 @@ json ToolRegistry::invoke(const std::string &name, json arguments) const
 
 json ToolRegistry::list() const
 {
-	json out = json::array();
+	json tools = json::array();
 
 	for (const auto &[_, tool] : tools_)
 	{
-		out.push_back({{"name", tool->name()},
-									 {"description", tool->description()},
-									 {"schema", tool->schema()}});
+		tools.push_back({{"type", "function"},
+										 {"function", {{"name", tool->name()}, {"description", tool->description()}, {"parameters", tool->schema()}}}});
 	}
 
-	return out;
+	return tools;
 }

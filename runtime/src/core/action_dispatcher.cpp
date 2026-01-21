@@ -1,9 +1,18 @@
 #include "core/action_dispatcher.h"
 #include "tools/list_dir_tool.h"
+#include "core/error.h"
 
 ActionDispatcher::ActionDispatcher(ToolRegistry &registry)
 		: tool_registry_(registry)
 {
+}
+
+static json error_response(const std::string &action, const json &error)
+{
+	return {
+			{"status", "error"},
+			{"action", action},
+			{"error", error}};
 }
 
 json ActionDispatcher::dispatch(const json &request)
@@ -44,6 +53,52 @@ json ActionDispatcher::handle_ping(const json &)
 			{"result", "pong"}};
 }
 
+json ActionDispatcher::handle_single_tool_call(const json &call)
+{
+	if (!call.contains("id") || !call.contains("function"))
+	{
+		return {
+				{"error", make_error(
+											ErrorCode::INVALID_REQUEST,
+											"tool_call must contain id and function")}};
+	}
+
+	const auto &fn = call["function"];
+
+	if (!fn.contains("name"))
+	{
+		return {
+				{"error", make_error(
+											ErrorCode::INVALID_REQUEST,
+											"function.name is required")}};
+	}
+
+	std::string call_id = call["id"];
+	std::string tool = fn["name"];
+	json args = fn.value("arguments", json::object());
+
+	if (!tool_registry_.has(tool))
+	{
+		return {
+				{"error", make_error(
+											ErrorCode::UNKNOWN_TOOL,
+											"unknown tool",
+											"",
+											tool)}};
+	}
+
+	json data = tool_registry_.invoke(tool, args);
+
+	if (data.contains("error"))
+		return data;
+
+	return {
+			{"role", "tool"},
+			{"tool_call_id", call_id},
+			{"name", tool},
+			{"content", data}};
+}
+
 json ActionDispatcher::handle_infer(const json &request)
 {
 	if (!request.contains("messages") || !request["messages"].is_array())
@@ -51,63 +106,43 @@ json ActionDispatcher::handle_infer(const json &request)
 		return {
 				{"status", "error"},
 				{"action", "infer"},
-				{"error", {{"code", "INVALID_REQUEST"}, {"message", "messages must be an array"}}}};
+				{"error", make_error(
+											ErrorCode::INVALID_REQUEST,
+											"messages must be an array")}};
 	}
 
-	const auto &messages = request["messages"];
 	json results = json::array();
 
-	for (const auto &msg : messages)
+	for (const auto &msg : request["messages"])
 	{
-		if (!msg.contains("tool_call"))
-			continue;
-
-		const auto &call = msg["tool_call"];
-
-		if (!call.contains("id") || !call.contains("name"))
+		if (msg.contains("tool_calls") && msg["tool_calls"].is_array())
 		{
-			return {
-					{"status", "error"},
-					{"action", "infer"},
-					{"error", {{"code", "INVALID_TOOL_CALL"}, {"message", "tool_call must contain id and name"}}}};
+			for (const auto &call : msg["tool_calls"])
+			{
+				auto res = handle_single_tool_call(call);
+				if (res.contains("error"))
+					return error_response("infer", res["error"]);
+
+				results.push_back(res);
+			}
 		}
 
-		std::string call_id = call["id"];
-		std::string tool = call["name"];
-		json args = call.value("arguments", json::object());
-
-		if (!tool_registry_.has(tool))
+		else if (msg.contains("tool_call"))
 		{
-			return {
-					{"status", "error"},
-					{"action", "infer"},
-					{"error", {{"code", "UNKNOWN_TOOL"}, {"tool", tool}}}};
+			auto res = handle_single_tool_call(msg["tool_call"]);
+			if (res.contains("error"))
+				return error_response("infer", res["error"]);
+
+			results.push_back(res);
 		}
-
-		json data = tool_registry_.invoke(tool, args);
-
-		// validation / execution error
-		if (data.contains("error"))
-		{
-			return {
-					{"status", "error"},
-					{"action", "infer"},
-					{"error", data["error"]}};
-		}
-
-		results.push_back({{"role", "tool"},
-											 {"tool_call_id", call_id},
-											 {"name", tool},
-											 {"content", data}});
 	}
 
-	// No tool calls found
 	if (results.empty())
 	{
 		return {
 				{"status", "ok"},
 				{"action", "infer"},
-				{"result", {{"type", "assistant"}, {"message", {{"role", "assistant"}, {"content", "No tool call detected."}}}}}};
+				{"result", {{"type", "assistant"}, {"message", {{"role", "assistant"}, {"content", "No tool call detected"}}}}}};
 	}
 
 	return {
@@ -121,5 +156,5 @@ json ActionDispatcher::handle_list_tools(const json &)
 	return {
 			{"status", "ok"},
 			{"action", "list_tools"},
-			{"tools", tool_registry_.list()}};
+			{"result", {{"tools", tool_registry_.list()}}}};
 }
