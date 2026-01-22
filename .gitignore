@@ -1,2 +1,15 @@
-.vscode
-runtime/build
+# Models
+runtime/models/
+models/
+*.gguf
+*.bin
+
+# Build
+build/
+runtime/build/
+
+# Socket
+*.sock
+
+# VSCode
+.vscode/

@@ -1,0 +1,22 @@
+{
+    "configurations": [
+        {
+            "name": "Linux",
+            "includePath": [
+							"${workspaceFolder}/**",
+							"${workspaceFolder}/runtime/include",
+							"${workspaceFolder}/third_party/llama.cpp/include",
+							"${workspaceFolder}/third_party/llama.cpp/ggml/include",
+							"/usr/include",
+							"/usr/include/nlohmann"
+						],
+            "defines": [],
+            "compilerPath": "/usr/bin/gcc",
+            "cStandard": "c17",
+            "cppStandard": "gnu++17",
+            "intelliSenseMode": "linux-gcc-x64",
+						"compileCommands": "${workspaceFolder}/runtime/build/compile_commands.json"
+        }
+    ],
+    "version": 4
+}

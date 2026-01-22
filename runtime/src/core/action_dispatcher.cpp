@@ -1,9 +1,11 @@
 #include "core/action_dispatcher.h"
-#include "tools/list_dir_tool.h"
 #include "core/error.h"
+#include <regex>
 
-ActionDispatcher::ActionDispatcher(ToolRegistry &registry)
-		: tool_registry_(registry)
+ActionDispatcher::ActionDispatcher(
+		ToolRegistry &registry,
+		std::shared_ptr<LlamaEngine> llm_engine)
+		: tool_registry_(registry), llm_engine_(llm_engine)
 {
 }
 
@@ -39,6 +41,14 @@ json ActionDispatcher::dispatch(const json &request)
 	{
 		return handle_list_tools(request);
 	}
+	else if (action == "generate")
+	{
+		return handle_generate(request);
+	}
+	else if (action == "model_info")
+	{
+		return handle_model_info(request);
+	}
 
 	return {
 			{"status", "error"},
@@ -53,24 +63,18 @@ json ActionDispatcher::handle_ping(const json &)
 			{"result", "pong"}};
 }
 
-json ActionDispatcher::handle_single_tool_call(const json &call)
+ToolTask ActionDispatcher::submit_tool_call(const json &call)
 {
 	if (!call.contains("id") || !call.contains("function"))
 	{
-		return {
-				{"error", make_error(
-											ErrorCode::INVALID_REQUEST,
-											"tool_call must contain id and function")}};
+		throw std::runtime_error("tool_call must contain id and function");
 	}
 
 	const auto &fn = call["function"];
 
 	if (!fn.contains("name"))
 	{
-		return {
-				{"error", make_error(
-											ErrorCode::INVALID_REQUEST,
-											"function.name is required")}};
+		throw std::runtime_error("function.name is required");
 	}
 
 	std::string call_id = call["id"];
@@ -79,76 +83,262 @@ json ActionDispatcher::handle_single_tool_call(const json &call)
 
 	if (!tool_registry_.has(tool))
 	{
-		return {
-				{"error", make_error(
-											ErrorCode::UNKNOWN_TOOL,
-											"unknown tool",
-											"",
-											tool)}};
+		throw std::runtime_error("unknown tool: " + tool);
 	}
 
-	json data = tool_registry_.invoke(tool, args);
+	auto fut = std::async(std::launch::async, [this, tool, args]()
+												{
+		try {
+			return tool_registry_.invoke(tool, args);
+		} catch (const std::exception &e) {
+			return json{
+				{"error", make_error(
+					ErrorCode::TOOL_EXECUTION_FAILED,
+					e.what(),
+					"",
+					tool
+				)}
+			};
+		} });
 
-	if (data.contains("error"))
-		return data;
+	return {call_id, tool, std::move(fut)};
+}
 
-	return {
-			{"role", "tool"},
-			{"tool_call_id", call_id},
-			{"name", tool},
-			{"content", data}};
+bool ActionDispatcher::is_tool_call_response(const std::string &text, json &parsed)
+{
+	// Try to extract JSON from text
+	// Look for pattern: {"tool":"...", "arguments":{...}}
+
+	std::regex json_pattern(R"(\{[^}]*"tool"[^}]*\})");
+	std::smatch match;
+
+	if (std::regex_search(text, match, json_pattern))
+	{
+		try
+		{
+			parsed = json::parse(match.str());
+			if (parsed.contains("tool") && parsed.contains("arguments"))
+			{
+				return true;
+			}
+		}
+		catch (...)
+		{
+			// Not valid JSON
+		}
+	}
+
+	return false;
+}
+
+json ActionDispatcher::infer_with_ai(const json &request)
+{
+	if (!llm_engine_ || !llm_engine_->is_loaded())
+	{
+		return error_response(
+				"infer",
+				make_error(ErrorCode::INTERNAL_ERROR, "LLM engine not available"));
+	}
+
+	const auto &messages = request["messages"];
+
+	// Build prompt with available tools
+	std::vector<json> chat_messages;
+
+	// Add system message with tool definitions
+	json system_msg = {
+			{"role", "system"},
+			{"content", "You have access to these tools:\n"}};
+
+	auto tools = tool_registry_.list();
+	for (const auto &tool : tools)
+	{
+		const auto &fn = tool["function"];
+		system_msg["content"] = system_msg["content"].get<std::string>() +
+														"- " + fn["name"].get<std::string>() + ": " +
+														fn["description"].get<std::string>() + "\n";
+	}
+
+	system_msg["content"] = system_msg["content"].get<std::string>() +
+													"\nTo use a tool, respond with JSON: {\"tool\":\"name\",\"arguments\":{...}}";
+
+	chat_messages.push_back(system_msg);
+
+	// Add conversation messages
+	for (const auto &msg : messages)
+	{
+		chat_messages.push_back(msg);
+	}
+
+	// Generate response
+	int max_tokens = request.value("max_tokens", 512);
+	float temperature = request.value("temperature", 0.7f);
+
+	try
+	{
+		auto result = llm_engine_->chat(chat_messages, max_tokens, temperature);
+
+		// Check if response is a tool call
+		json tool_call;
+		if (is_tool_call_response(result.text, tool_call))
+		{
+			// Execute the tool
+			std::string tool_name = tool_call["tool"];
+			json tool_args = tool_call["arguments"];
+
+			if (!tool_registry_.has(tool_name))
+			{
+				return error_response(
+						"infer",
+						make_error(ErrorCode::UNKNOWN_TOOL, "Tool not found: " + tool_name));
+			}
+
+			auto tool_result = tool_registry_.invoke(tool_name, tool_args);
+
+			// Generate final response with tool result
+			chat_messages.push_back({{"role", "assistant"},
+															 {"content", result.text}});
+
+			chat_messages.push_back({{"role", "tool"},
+															 {"name", tool_name},
+															 {"content", tool_result.dump()}});
+
+			auto final_result = llm_engine_->chat(chat_messages, max_tokens, temperature);
+
+			return {
+					{"status", "ok"},
+					{"action", "infer"},
+					{"result", {{"type", "assistant"}, {"message", {{"role", "assistant"}, {"content", final_result.text}}}, {"tool_used", tool_name}, {"tokens_used", result.tokens_generated + final_result.tokens_generated}, {"tokens_per_second", final_result.tokens_per_second}}}};
+		}
+		else
+		{
+			// Direct response, no tool needed
+			return {
+					{"status", "ok"},
+					{"action", "infer"},
+					{"result", {{"type", "assistant"}, {"message", {{"role", "assistant"}, {"content", result.text}}}, {"tokens_used", result.tokens_generated}, {"tokens_per_second", result.tokens_per_second}}}};
+		}
+	}
+	catch (const std::exception &e)
+	{
+		return error_response(
+				"infer",
+				make_error(ErrorCode::INTERNAL_ERROR, e.what()));
+	}
 }
 
 json ActionDispatcher::handle_infer(const json &request)
 {
 	if (!request.contains("messages") || !request["messages"].is_array())
 	{
-		return {
-				{"status", "error"},
-				{"action", "infer"},
-				{"error", make_error(
-											ErrorCode::INVALID_REQUEST,
-											"messages must be an array")}};
+		return error_response(
+				"infer",
+				make_error(ErrorCode::INVALID_REQUEST, "messages must be an array"));
 	}
 
-	json results = json::array();
-
+	// Check if this is explicit tool calling (old style) or AI-powered
+	bool has_explicit_tools = false;
 	for (const auto &msg : request["messages"])
 	{
-		if (msg.contains("tool_calls") && msg["tool_calls"].is_array())
+		if (msg.contains("tool_calls") || msg.contains("tool_call"))
 		{
-			for (const auto &call : msg["tool_calls"])
-			{
-				auto res = handle_single_tool_call(call);
-				if (res.contains("error"))
-					return error_response("infer", res["error"]);
+			has_explicit_tools = true;
+			break;
+		}
+	}
 
-				results.push_back(res);
+	if (has_explicit_tools)
+	{
+		// Original behavior: execute explicit tool calls
+		std::vector<ToolTask> tasks;
+
+		for (const auto &msg : request["messages"])
+		{
+			if (msg.contains("tool_calls") && msg["tool_calls"].is_array())
+			{
+				for (const auto &call : msg["tool_calls"])
+				{
+					try
+					{
+						tasks.push_back(submit_tool_call(call));
+					}
+					catch (const std::exception &e)
+					{
+						return error_response(
+								"infer",
+								make_error(ErrorCode::INVALID_REQUEST, e.what()));
+					}
+				}
+			}
+			else if (msg.contains("tool_call"))
+			{
+				try
+				{
+					tasks.push_back(submit_tool_call(msg["tool_call"]));
+				}
+				catch (const std::exception &e)
+				{
+					return error_response(
+							"infer",
+							make_error(ErrorCode::INVALID_REQUEST, e.what()));
+				}
 			}
 		}
 
-		else if (msg.contains("tool_call"))
+		if (tasks.empty())
 		{
-			auto res = handle_single_tool_call(msg["tool_call"]);
-			if (res.contains("error"))
-				return error_response("infer", res["error"]);
-
-			results.push_back(res);
+			return {
+					{"status", "ok"},
+					{"action", "infer"},
+					{"result", {{"type", "assistant"}, {"message", {{"role", "assistant"}, {"content", "No tool call detected"}}}}}};
 		}
-	}
 
-	if (results.empty())
-	{
+		json results = json::array();
+
+		for (auto &task : tasks)
+		{
+			json data;
+
+			try
+			{
+				data = task.future.get();
+			}
+			catch (const std::exception &e)
+			{
+				return error_response(
+						"infer",
+						make_error(
+								ErrorCode::TOOL_EXECUTION_FAILED,
+								e.what(),
+								"",
+								task.tool));
+			}
+
+			if (data.contains("error"))
+			{
+				results.push_back({{"role", "tool"},
+													 {"tool_call_id", task.call_id},
+													 {"name", task.tool},
+													 {"error", data["error"]}});
+				continue;
+			}
+
+			results.push_back({{"role", "tool"},
+												 {"tool_call_id", task.call_id},
+												 {"name", task.tool},
+												 {"content", data}});
+		}
+
 		return {
 				{"status", "ok"},
 				{"action", "infer"},
-				{"result", {{"type", "assistant"}, {"message", {{"role", "assistant"}, {"content", "No tool call detected"}}}}}};
+				{"result", {{"type", "tool_results"}, {"messages", results}}}};
 	}
-
-	return {
-			{"status", "ok"},
-			{"action", "infer"},
-			{"result", {{"type", "tool_results"}, {"messages", results}}}};
+	else
+	{
+		// AI-powered mode: let LLM decide what to do
+		return infer_with_ai(request);
+	}
 }
 
 json ActionDispatcher::handle_list_tools(const json &)
@@ -157,4 +347,67 @@ json ActionDispatcher::handle_list_tools(const json &)
 			{"status", "ok"},
 			{"action", "list_tools"},
 			{"result", {{"tools", tool_registry_.list()}}}};
+}
+
+json ActionDispatcher::handle_generate(const json &request)
+{
+	if (!llm_engine_ || !llm_engine_->is_loaded())
+	{
+		return error_response(
+				"generate",
+				make_error(ErrorCode::INTERNAL_ERROR, "LLM engine not available"));
+	}
+
+	if (!request.contains("prompt"))
+	{
+		return error_response(
+				"generate",
+				make_error(ErrorCode::INVALID_REQUEST, "prompt is required"));
+	}
+
+	std::string prompt = request["prompt"];
+	int max_tokens = request.value("max_tokens", 512);
+	float temperature = request.value("temperature", 0.7f);
+
+	std::vector<std::string> stop;
+	if (request.contains("stop") && request["stop"].is_array())
+	{
+		for (const auto &s : request["stop"])
+		{
+			if (s.is_string())
+				stop.push_back(s);
+		}
+	}
+
+	try
+	{
+		auto result = llm_engine_->generate(prompt, max_tokens, temperature, stop);
+
+		return {
+				{"status", "ok"},
+				{"action", "generate"},
+				{"result", {{"text", result.text}, {"tokens_generated", result.tokens_generated}, {"tokens_per_second", result.tokens_per_second}, {"stop_reason", result.stop_reason}, {"stopped_by_limit", result.stopped_by_limit}}}};
+	}
+	catch (const std::exception &e)
+	{
+		return error_response(
+				"generate",
+				make_error(ErrorCode::INTERNAL_ERROR, e.what()));
+	}
+}
+
+json ActionDispatcher::handle_model_info(const json &)
+{
+	if (!llm_engine_ || !llm_engine_->is_loaded())
+	{
+		return {
+				{"status", "ok"},
+				{"action", "model_info"},
+				{"result", {{"loaded", false}}}};
+	}
+
+	return {
+			{"status", "ok"},
+			{"action", "model_info"},
+			{"result", {{"loaded", true}, {"model_name", llm_engine_->model_name()}, {"context_size", llm_engine_->context_size()}, {"vocab_size", llm_engine_->vocab_size()}}}};
 }

@@ -88,5 +88,10 @@ void SocketServer::handle_client(int client_fd)
 	}
 
 	std::string out = response.dump();
-	write(client_fd, out.c_str(), out.size());
+
+	ssize_t written = write(client_fd, out.c_str(), out.size());
+	if (written < 0)
+	{
+		perror("write");
+	}
 }
