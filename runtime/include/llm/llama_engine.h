@@ -3,7 +3,6 @@
 #include <string>
 #include <memory>
 #include <nlohmann/json.hpp>
-#include "llama.h"
 #include "llm/llama_config.h"
 
 // Forward declarations from llama.cpp
@@ -35,7 +34,7 @@ public:
 	// Load model
 	bool load();
 	void unload();
-	bool is_loaded() const { return model_ != nullptr && ctx_ != nullptr; }
+	bool is_loaded() const { return model_ != nullptr; }
 
 	// Text generation
 	GenerateResult generate(
@@ -60,9 +59,10 @@ private:
 	llama_model *model_;
 	llama_context *ctx_;
 	llama_sampler *sampler_;
-	llama_context_params ctx_params_;
 
 	// Helper methods
+	bool ensure_context();
+	void reset_context();
 	std::vector<int> tokenize(const std::string &text, bool add_bos = true);
 	std::string detokenize(const std::vector<int> &tokens);
 	std::string build_chat_prompt(const std::vector<json> &messages);
