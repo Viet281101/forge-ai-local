@@ -3,6 +3,7 @@
 #include <sys/socket.h>
 #include <sys/un.h>
 #include <unistd.h>
+#include <signal.h>
 #include <cstring>
 #include <iostream>
 
@@ -20,6 +21,9 @@ SocketServer::~SocketServer()
 
 void SocketServer::run()
 {
+	// Ignore SIGPIPE - handle write errors instead
+	signal(SIGPIPE, SIG_IGN);
+
 	server_fd_ = socket(AF_UNIX, SOCK_STREAM, 0);
 	if (server_fd_ < 0)
 	{
@@ -63,7 +67,7 @@ void SocketServer::run()
 
 void SocketServer::handle_client(int client_fd)
 {
-	char buffer[4096];
+	char buffer[8192]; // Increased buffer size
 	ssize_t n = read(client_fd, buffer, sizeof(buffer) - 1);
 	if (n <= 0)
 		return;
@@ -80,18 +84,38 @@ void SocketServer::handle_client(int client_fd)
 		json request = json::parse(buffer);
 		response = dispatcher_.dispatch(request);
 	}
-	catch (const std::exception &)
+	catch (const std::exception &e)
 	{
 		response = {
 				{"status", "error"},
-				{"error", "invalid json"}};
+				{"error", std::string("invalid json: ") + e.what()}};
 	}
 
 	std::string out = response.dump();
 
-	ssize_t written = write(client_fd, out.c_str(), out.size());
-	if (written < 0)
+	// Write response with proper error handling
+	size_t total_written = 0;
+	while (total_written < out.size())
 	{
-		perror("write");
+		ssize_t written = write(client_fd, out.c_str() + total_written, out.size() - total_written);
+		if (written < 0)
+		{
+			perror("write");
+			return;
+		}
+		total_written += written;
+	}
+
+	// Flush to ensure data is sent
+	fsync(client_fd);
+
+	if (response.contains("status") && response["status"] == "ok")
+	{
+		std::cout << "[response] OK (" << out.length() << " bytes)\n";
+	}
+	else
+	{
+		std::cout << "[response] ERROR\n"
+							<< out << "\n";
 	}
 }

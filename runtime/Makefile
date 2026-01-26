@@ -164,13 +164,13 @@ test-list-tools:
 .PHONY: test-generate
 test-generate:
 	@echo "$(YELLOW)==> Test: Text Generation$(NC)"
-	@printf '{"version":1,"action":"generate","prompt":"Write a Python function to calculate fibonacci:\\n\\ndef fib(n):","max_tokens":200,"temperature":0.7}' | socat - UNIX-CONNECT:$(SOCKET)
+	@printf '{"version":1,"action":"generate","prompt":"Write a Python function to calculate fibonacci:\\n\\ndef fib(n):","max_tokens":200,"temperature":0.7}' | socat -T60 - UNIX-CONNECT:$(SOCKET)
 	@echo ""
 
 .PHONY: test-infer-ai
 test-infer-ai:
 	@echo "$(YELLOW)==> Test: AI-powered tool calling$(NC)"
-	@printf '{"version":1,"action":"infer","messages":[{"role":"user","content":"What files are in the current directory?"}],"max_tokens":300}' | socat - UNIX-CONNECT:$(SOCKET)
+	@printf '{"version":1,"action":"infer","messages":[{"role":"user","content":"What files are in the current directory?"}],"max_tokens":300}' | socat -T60 - UNIX-CONNECT:$(SOCKET)
 	@echo ""
 
 .PHONY: test-infer-explicit

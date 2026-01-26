@@ -28,12 +28,6 @@ bool LlamaEngine::load()
 	llama_backend_init();
 	llama_numa_init(GGML_NUMA_STRATEGY_DISABLED);
 
-	// Suppress llama.cpp logs unless verbose
-	if (!config_.verbose)
-	{
-		llama_log_set(nullptr, nullptr);
-	}
-
 	// Model parameters
 	llama_model_params model_params = llama_model_default_params();
 	model_params.use_mmap = config_.use_mmap;
@@ -220,11 +214,15 @@ GenerateResult LlamaEngine::generate(
 	{
 		// Ensure we have a fresh context for each generation
 		// This is necessary because transitional llama.cpp lacks proper KV cache clear APIs
+		std::cout << "[LlamaEngine] Starting generation...\n"
+							<< std::flush;
 		reset_context();
 		if (!ctx_)
 		{
 			throw std::runtime_error("Failed to create context");
 		}
+		std::cout << "[LlamaEngine] Context ready\n"
+							<< std::flush;
 
 		int max_gen = max_tokens > 0 ? max_tokens : config_.max_tokens;
 		auto stops = stop.empty() ? config_.stop_sequences : stop;
@@ -310,6 +308,10 @@ GenerateResult LlamaEngine::generate(
 
 		result.text = generated_text;
 		result.tokens_per_second = result.tokens_generated / (duration.count() / 1000.0f);
+
+		std::cout << "[LlamaEngine] Generation complete: " << result.tokens_generated
+							<< " tokens, " << result.tokens_per_second << " t/s\n"
+							<< std::flush;
 
 		if (config_.verbose)
 		{
